@@ -84,6 +84,8 @@ describePg("decisionService", () => {
     options: [{ id: "yes", label: "Yes", effects: [{ type: "comment_on_issue", targetIssueId, staleness, bodyMarkdown: "hello" }] }],
     ...extra,
   });
+  const expiresSoon = () => new Date(Date.now() + 500);
+  const waitForExpiration = () => new Promise((resolve) => setTimeout(resolve, 550));
 
   it("returns the existing decision for concurrent idempotent creates", async () => {
     const input = {
@@ -440,27 +442,27 @@ describePg("decisionService", () => {
 
   it("bounds expiration work to the configured batch size", async () => {
     process.env.PAPERCLIP_DECISIONS_SWEEP_BATCH_SIZE = "1";
-    await createCommentDecision("lenient", { idempotencyKey: "batch-1", expiresAt: new Date(Date.now() + 5) });
-    await createCommentDecision("lenient", { idempotencyKey: "batch-2", expiresAt: new Date(Date.now() + 5) });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await createCommentDecision("lenient", { idempotencyKey: "batch-1", expiresAt: expiresSoon() });
+    await createCommentDecision("lenient", { idempotencyKey: "batch-2", expiresAt: expiresSoon() });
+    await waitForExpiration();
     expect((await service().sweepExpired()).expired).toBe(1);
     expect((await service().sweepExpired()).expired).toBe(1);
   });
 
   it("falls back to the default sweep batch size for invalid configuration", async () => {
     process.env.PAPERCLIP_DECISIONS_SWEEP_BATCH_SIZE = "not-a-number";
-    await createCommentDecision("lenient", { idempotencyKey: "invalid-batch-1", expiresAt: new Date(Date.now() + 5) });
-    await createCommentDecision("lenient", { idempotencyKey: "invalid-batch-2", expiresAt: new Date(Date.now() + 5) });
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await createCommentDecision("lenient", { idempotencyKey: "invalid-batch-1", expiresAt: expiresSoon() });
+    await createCommentDecision("lenient", { idempotencyKey: "invalid-batch-2", expiresAt: expiresSoon() });
+    await waitForExpiration();
 
     await expect(service().sweepExpired()).resolves.toMatchObject({ expired: 2 });
   });
 
   it("expires TTL and target-gone decisions and wakes the origin agent", async () => {
-    const ttl = await createCommentDecision("lenient", { expiresAt: new Date(Date.now() + 5) });
+    const ttl = await createCommentDecision("lenient", { expiresAt: expiresSoon() });
     const gone = await createCommentDecision("strict", { idempotencyKey: "gone" });
     await db.update(issues).set({ status: "cancelled" }).where(eq(issues.id, targetIssueId));
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForExpiration();
     expect((await service().sweepExpired()).expired).toBe(2);
     const rows = await db.select().from(decisions);
     expect(rows.find((row) => row.id === ttl.id)?.metadata).toMatchObject({ expiredReason: "ttl" });
@@ -483,12 +485,12 @@ describePg("decisionService", () => {
     });
     await service().create({
       companyId, actor: agentActor(), agentId, runId, ruleKey: "cleanup.stale", title: "Clean up?", body: "Body",
-      options: [{ id: "clean", label: "Clean", effects: [] }], expiresAt: new Date(Date.now() + 5),
+      options: [{ id: "clean", label: "Clean", effects: [] }], expiresAt: expiresSoon(),
     });
     await service().decide({ id: accepted.id, optionId: "assign", decidedByUserId, userActor: boardActor() });
     await service().decide({ id: acceptedAgain.id, optionId: "assign", decidedByUserId, userActor: boardActor() });
     await service().dismiss(rejected.id, decidedByUserId, boardActor(), "Not this time");
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await waitForExpiration();
     await service().sweepExpired();
 
     const stats = await service().stats(companyId, { originAgentId: agentId });
