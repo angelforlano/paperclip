@@ -20,7 +20,10 @@ permissions:
   id-token: write   # cosign keyless OIDC
 
 env:
-  REGISTRY: ghcr.io/paperclipai
+  # Keep images owned by the repository that built them. Forks cannot publish
+  # to the upstream organization, and the scoped GITHUB_TOKEN only grants
+  # packages:write in this repository owner's namespace.
+  REGISTRY: ghcr.io/${{ github.repository_owner }}
   VERSION: ${{ github.event.inputs.version || format('git-{0}', github.sha) }}
 
 jobs:
