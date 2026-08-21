@@ -188,7 +188,7 @@ When you add a new public package:
 3. if CI should not publish it yet, keep `"publishFromCi": false`
 4. only enable `"publishFromCi": true` after npm trusted publishing is configured for that package
 
-PR CI now checks changed release-enabled package manifests against npm. That catches a missing first-publish bootstrap before the change reaches `master`.
+PR CI now checks changed release-enabled package manifests against npm. That catches a missing first-publish bootstrap before the change reaches `main`.
 
 ### One-time bootstrap sequence for a new package
 
